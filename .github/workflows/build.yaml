@@ -1,0 +1,105 @@
+name: Build UBI 9 image
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/build.yaml', 'scripts/**']
+  pull_request:
+    paths: ['.github/workflows/build.yaml', 'scripts/**']
+  schedule:
+    - cron: '23 4 * * *'
+  workflow_dispatch:
+    inputs:
+      release:
+        description: 'Stable upstream release tag; blank selects latest stable'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ubi9-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Check build scripts
+        run: |
+          python3 -m unittest discover -s tests -v
+          python3 -m compileall -q scripts tests
+          bash -n scripts/build.sh
+      - name: Resolve stable release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_RELEASE: ${{ inputs.release }}
+        run: python3 scripts/resolve_release.py
+      - name: Fetch upstream release
+        env:
+          RELEASE: ${{ steps.release.outputs.tag }}
+        run: |
+          git init upstream
+          git -C upstream remote add origin https://github.com/IBM/mcp-context-forge.git
+          git -C upstream fetch --depth 1 origin "refs/tags/$RELEASE"
+          git -C upstream checkout --detach FETCH_HEAD
+          git -C upstream rev-parse HEAD > upstream-commit.txt
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Build locally before publishing
+        env:
+          RELEASE: ${{ steps.release.outputs.tag }}
+        run: bash scripts/build.sh upstream contextforge-ubi9:test
+      - name: Install CPU emulator
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-user-static
+      - name: Check Python and native dependencies without AVX
+        run: |
+          docker run --rm --network none \
+            -v /usr/bin/qemu-x86_64-static:/cpucheck:ro \
+            --entrypoint /cpucheck contextforge-ubi9:test \
+            -cpu Nehalem /app/.venv/bin/python -c \
+            'import sqlite3, ssl, grpc, cryptography, pydantic_core; from importlib.metadata import version; print(version("mcp-contextforge-gateway"))'
+      - name: Check startup, UI, authentication and SQLite persistence
+        run: python3 scripts/smoke_test.py contextforge-ubi9:test
+      - name: Publish tested image
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          REGISTRY_TOKEN: ${{ github.token }}
+          REGISTRY_USER: ${{ github.actor }}
+          REPOSITORY: ${{ github.repository }}
+          RELEASE: ${{ steps.release.outputs.tag }}
+          EXPLICIT_RELEASE: ${{ inputs.release }}
+        run: |
+          image="ghcr.io/${REPOSITORY,,}"
+          printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$REGISTRY_USER" --password-stdin
+          trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
+          build_tag="$RELEASE-ubi9-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          docker tag contextforge-ubi9:test "$image:$build_tag"
+          docker push "$image:$build_tag"
+          docker tag contextforge-ubi9:test "$image:$RELEASE-ubi9"
+          docker push "$image:$RELEASE-ubi9"
+          # A manual build of an old release must not roll the rolling tag back.
+          if [ -z "$EXPLICIT_RELEASE" ]; then
+            docker tag contextforge-ubi9:test "$image:stable-ubi9"
+            docker push "$image:stable-ubi9"
+          fi
+          {
+            echo '### Published after checks passed'
+            echo "- Image: \`$image:$build_tag\`"
+            echo "- Upstream: \`$RELEASE\`"
+            echo "- Upstream commit: \`$(cat upstream-commit.txt)\`"
+            echo '- Platform: linux/amd64; UBI 9; built-in Admin UI included.'
+            echo '- CPU check: QEMU Nehalem, no AVX. Real NAS acceptance and Synology SSO still require testing.'
+            echo '- Deploy by digest after backing up SQLite and encryption secrets.'
+            docker image inspect "$image:$build_tag" --format '{{json .RepoDigests}}'
+          } >> "$GITHUB_STEP_SUMMARY"

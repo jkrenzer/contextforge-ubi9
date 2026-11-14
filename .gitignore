@@ -1,0 +1,11 @@
+.env
+.env.*
+!.env.example
+data/
+upstream/
+upstream-commit.txt
+__pycache__/
+*.tar
+*.db
+*.db-shm
+*.db-wal

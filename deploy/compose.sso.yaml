@@ -1,0 +1,26 @@
+# Optional overlay: docker compose -f compose.yaml -f compose.sso.yaml up -d
+# For Container Manager's single YAML editor, merge this environment mapping into
+# the contextforge service in compose.yaml. Do not use this overlay by itself.
+services:
+  contextforge:
+    environment:
+      SSO_ENABLED: 'true'
+      SSO_GENERIC_ENABLED: 'true'
+      SSO_GENERIC_PROVIDER_ID: synology
+      SSO_GENERIC_DISPLAY_NAME: 'Synology NAS'
+      SSO_GENERIC_CLIENT_ID: '${SSO_CLIENT_ID:?Set the Synology application ID}'
+      SSO_GENERIC_CLIENT_SECRET: '${SSO_CLIENT_SECRET:?Set the Synology application secret}'
+      SSO_GENERIC_ISSUER: '${SSO_ISSUER:?Copy issuer from discovery}'
+      SSO_GENERIC_AUTHORIZATION_URL: '${SSO_AUTHORIZATION_URL:?Copy authorization_endpoint from discovery}'
+      SSO_GENERIC_TOKEN_URL: '${SSO_TOKEN_URL:?Copy token_endpoint from discovery}'
+      SSO_GENERIC_USERINFO_URL: '${SSO_USERINFO_URL:?Copy userinfo_endpoint from discovery}'
+      SSO_GENERIC_JWKS_URI: '${SSO_JWKS_URI:?Copy jwks_uri from discovery}'
+      SSO_GENERIC_SCOPE: 'openid email groups'
+      SSO_GENERIC_GROUPS_CLAIM: groups
+      SSO_GENERIC_ADMIN_GROUPS: '[]'
+      SSO_GENERIC_ROLE_MAPPINGS: '{}'
+      SSO_AUTO_CREATE_USERS: 'true'
+      SSO_REQUIRE_ADMIN_APPROVAL: 'true'
+      SSO_PRESERVE_ADMIN_AUTH: 'true'
+      SSO_ALLOW_PROVIDER_LINKING: 'false'
+      SSO_API_TOKEN_AUTH_ENABLED: 'false'

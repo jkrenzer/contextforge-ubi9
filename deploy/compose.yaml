@@ -1,0 +1,77 @@
+services:
+  data-init:
+    image: busybox:1.37.0
+    user: '0:0'
+    restart: 'no'
+    network_mode: none
+    entrypoint: ['/bin/sh', '-ec']
+    command: ['chown 10001:10001 /app/data && chmod 0700 /app/data']
+    volumes:
+      - '${CONTEXTFORGE_DATA_DIR:?Set a dedicated absolute NAS directory}:/app/data'
+    security_opt: ['no-new-privileges:true']
+
+  contextforge:
+    image: '${CONTEXTFORGE_IMAGE:?Set a successfully tested image digest}'
+    restart: unless-stopped
+    depends_on:
+      data-init:
+        condition: service_completed_successfully
+    environment:
+      HOST: '0.0.0.0'
+      PORT: '4444'
+      SSL: 'false'
+      ENVIRONMENT: production
+      APP_DOMAIN: '${CONTEXTFORGE_ORIGIN:?Set the external HTTPS origin}'
+      SECURE_COOKIES: 'true'
+      COOKIE_SAMESITE: lax
+      DATABASE_URL: 'sqlite:////app/data/mcp.db'
+      CACHE_TYPE: memory
+      GUNICORN_WORKERS: '1'
+      MCPGATEWAY_SKIP_MIGRATIONS: 'false'
+      JWT_SECRET_KEY: '${JWT_SECRET_KEY:?Set a strong secret}'
+      AUTH_ENCRYPTION_SECRET: '${AUTH_ENCRYPTION_SECRET:?Set a separate strong secret}'
+      PLATFORM_ADMIN_EMAIL: '${PLATFORM_ADMIN_EMAIL:?Set the administrator email}'
+      PLATFORM_ADMIN_PASSWORD: '${PLATFORM_ADMIN_PASSWORD:?Set a strong administrator password}'
+      BASIC_AUTH_PASSWORD: '${BASIC_AUTH_PASSWORD:?Set a separate strong bootstrap secret}'
+      DEFAULT_USER_PASSWORD: '${DEFAULT_USER_PASSWORD:?Set a separate strong bootstrap secret}'
+      MCPGATEWAY_UI_ENABLED: 'true'
+      MCPGATEWAY_ADMIN_API_ENABLED: 'true'
+      EMAIL_AUTH_ENABLED: 'true'
+      PUBLIC_REGISTRATION_ENABLED: 'false'
+      AUTH_REQUIRED: 'true'
+      MCP_REQUIRE_AUTH: 'true'
+      MCP_CLIENT_AUTH_ENABLED: 'true'
+      API_ALLOW_BASIC_AUTH: 'false'
+      DOCS_ALLOW_BASIC_AUTH: 'false'
+      TRUST_PROXY_AUTH: 'false'
+      AUTO_CREATE_PERSONAL_TEAMS: 'true'
+      ALLOW_TEAM_CREATION: 'false'
+      ALLOW_TEAM_JOIN_REQUESTS: 'false'
+      ALLOW_TEAM_INVITATIONS: 'false'
+      SSRF_PROTECTION_ENABLED: 'true'
+      SSRF_ALLOW_LOCALHOST: 'false'
+      SSRF_ALLOW_PRIVATE_NETWORKS: 'false'
+      SSRF_ALLOWED_NETWORKS: '${SSRF_ALLOWED_NETWORKS:-[]}'
+      LOG_LEVEL: INFO
+    ports:
+      - '127.0.0.1:4444:4444'
+    volumes:
+      - '${CONTEXTFORGE_DATA_DIR:?Set a dedicated absolute NAS directory}:/app/data'
+    networks: [mcp]
+    security_opt: ['no-new-privileges:true']
+    healthcheck:
+      test: ['CMD', '/app/.venv/bin/python', '-c', "import urllib.request; urllib.request.urlopen('http://127.0.0.1:4444/health',timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      start_period: 120s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+networks:
+  mcp:
+    name: contextforge
+    driver: bridge
