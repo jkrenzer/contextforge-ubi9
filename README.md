@@ -1,6 +1,6 @@
 # ContextForge on UBI 9
 
-Builds unmodified [IBM ContextForge](https://github.com/IBM/mcp-context-forge) stable releases with Red Hat UBI 9 bases for older x86 NAS CPUs, including the Intel Celeron J3355. Official recent images use UBI 10 and require x86-64-v3. This build targets `linux/amd64`; it is not an ARM image.
+Builds [IBM ContextForge](https://github.com/IBM/mcp-context-forge) stable releases with Red Hat UBI 9 bases for older x86 NAS CPUs, including the Intel Celeron J3355. Official recent images use UBI 10 and require x86-64-v3. This build targets `linux/amd64`; it is not an ARM image.
 
 **Status:** CI must complete successfully before there is a usable image. A passing build is not an end-to-end Synology SSO or tenant-isolation certification. Test the first image on the NAS before using real data.
 
@@ -55,6 +55,14 @@ python3 scripts/smoke_test.py contextforge-ubi9:local
 For offline transfer, `docker save -o contextforge-ubi9.tar contextforge-ubi9:local`, transfer the archive, then import it in Container Manager or use `docker load`. Set `CONTEXTFORGE_IMAGE=contextforge-ubi9:local`.
 
 The build uses upstream's own Containerfile, not a vendored fork. UBI 9 remains a maintained base, but CPU compatibility still needs acceptance on actual hardware. Upstream application and bundled dependency licenses remain applicable; upstream is Apache-2.0. Do not assume that changing a container base proves security compliance.
+
+## SSO compatibility workaround
+
+Before building, `scripts/patch_sso_name.py` fixes upstream's null/empty full-name fallback in approval creation, account creation and token-name resolution. When an OIDC provider such as Synology omits the `name` claim, the authenticated email is used as the display name. Existing nonempty names are preserved. This changes no identity verification, group mappings or administrator-approval policy.
+
+The workaround is applied to each selected release. It is idempotent and fails the build for review if the expected upstream expression disappears. Review/remove it when upstream fixes the fallback. Regression tests cover null/missing/empty names, preservation of names and SQLite's NOT NULL approval constraint. The upstream revision label identifies the base commit; this documented compatibility patch is an additional local change.
+
+After a successful build, pull the new image and recreate the NAS container with its existing data and secrets. Start a fresh SSO login, approve the pending registration using a local ContextForge administrator, then sign in again. No database edit is required for this fix.
 
 ## Maintenance
 

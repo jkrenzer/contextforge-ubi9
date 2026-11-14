@@ -8,6 +8,9 @@ for arg in UBI_BASE NODEJS_IMAGE UBI_MINIMAL; do
   grep -q "^ARG $arg=" "$context/Containerfile" || { echo "Missing upstream build arg: $arg" >&2; exit 1; }
 done
 revision="$(git -C "$context" rev-parse HEAD)"
+# Synology OIDC can omit name; retain approval and fall back to verified email.
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+python3 "$script_dir/patch_sso_name.py" "$context"
 docker buildx build --platform linux/amd64 --load --pull \
   --build-arg UBI_BASE=registry.access.redhat.com/ubi9/ubi:latest \
   --build-arg NODEJS_IMAGE=registry.access.redhat.com/ubi9/nodejs-24:latest \
